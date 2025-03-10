@@ -15,7 +15,7 @@ import random
 import os
 from tensorflow.keras.callbacks import EarlyStopping
 
-# Set seeds
+
 np.random.seed(42)
 random.seed(42)
 tf.random.set_seed(42)
@@ -23,13 +23,13 @@ tf.random.set_seed(42)
 # Fetch stock data
 start = datetime.datetime(2010, 1, 1)
 end = datetime.datetime.now()
-user_input = st.text_input('Enter the stock symbol:', 'AAPL')  # Use a known working symbol
+user_input = st.text_input('Enter the stock symbol:', 'AAPL')  
 df = yf.download(user_input, start=start, end=end)
 df = df.reset_index(drop=False)
-# Check if data is fetched successfully
+
 if df.empty:
     st.error(f"No data found for the symbol: {user_input}. Please check the symbol and try again.")
-    st.stop()  # Stop execution if no data is found
+    st.stop()  
 
 # Prepare the data
 df['Date'] = df.index
@@ -46,8 +46,8 @@ df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
 
 # Calculate RSI
 delta = df['Close'].diff()
-gain = delta.where(delta > 0, 0)  # Replace negative values with 0
-loss = -delta.where(delta < 0, 0)  # Replace positive values with 0 and make loss positive
+gain = delta.where(delta > 0, 0)  
+loss = -delta.where(delta < 0, 0)  
 
 avg_gain = gain.rolling(window=14).mean()
 avg_loss = loss.rolling(window=14).mean()
@@ -75,7 +75,7 @@ def create_dataset(data, time_step=1):
     for i in range(len(data) - time_step - 1):
         a = data[i:(i + time_step), :]
         X.append(a)
-        Y.append(data[i + time_step, 1:3])  # Predict 'High', 'Low'
+        Y.append(data[i + time_step, 1:3])  
     return np.array(X), np.array(Y)
 
 time_step = 10
@@ -95,12 +95,12 @@ class LSTMHyperModel(HyperModel):
             return_sequences=True,
             input_shape=(time_step, X_train.shape[2])
         ))
-        model.add(Dropout(0.2))  # Add dropout for regularization
+        model.add(Dropout(0.2))  
         model.add(LSTM(
             units=hp.Int('units', min_value=64, max_value=512, step=64),  # Increased range
             return_sequences=True
         ))
-        model.add(Dropout(0.2))  # Add dropout for regularization
+        model.add(Dropout(0.2))  
         model.add(LSTM(
             units=hp.Int('units', min_value=64, max_value=512, step=64),  # Increased range
             return_sequences=False
@@ -117,13 +117,13 @@ class LSTMHyperModel(HyperModel):
 
 hypermodel = LSTMHyperModel()
 
-# Check if the model already exists
+
 model_file = 'model.h5'
 if os.path.exists(model_file):
     # Load the existing model
     best_model = load_model(model_file)
 else:
-    # Perform hyperparameter tuning
+    # hyperparameter tuning
     tuner = RandomSearch(
         hypermodel,
         objective='val_loss',
@@ -136,7 +136,7 @@ else:
     tuner.search(X_train, y_train, epochs=10, validation_data=(X_test, y_test))
     best_model = tuner.get_best_models(num_models=1)[0]
 
-    # Fit the best model with early stopping
+    
     early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
     best_model.fit(X_train, y_train, epochs=50, validation_data=(X_test, y_test), callbacks=[early_stopping])  # Increased epochs
 
@@ -187,7 +187,7 @@ last_close_value = df[['Prev Close']].iloc[-1].values.reshape(-1, 1)
 last_close_value_scaled = scaler_open.transform(last_close_value)
 predicted_opening_value = model_open.predict(last_close_value_scaled)
 
-# Ensure the predicted opening value is within the range of 0.5 to 2% change from the previous close value
+
 prev_close_value = df['Close'].iloc[-1]
 min_open = prev_close_value * 1.005
 max_open = prev_close_value * 1.01
@@ -217,7 +217,7 @@ st.subheader('Tomorrow\'s Predicted Prices')
 st.write(f"Open: {adjusted_predicted_prices[0][0]}")
 st.write(f"High: {adjusted_predicted_prices[0][1]}")
 st.write(f"Low: {adjusted_predicted_prices[0][2]}")
-st.write(f"Close: {predicted_closing_value}")  # Display predicted closing value
+st.write(f"Close: {predicted_closing_value}")  
 
 # Plotting the prediction vs original for 'High', 'Low', and 'Close' prices
 st.subheader('Prediction vs Original')
@@ -226,7 +226,7 @@ plt.plot(y_test[:, 0], 'g', label='Original High Price')
 plt.plot(y_predicted[:, 0], 'orange', label='Predicted High Price')
 plt.plot(y_test[:, 1], 'purple', label='Original Low Price')
 plt.plot(y_predicted[:, 1], 'pink', label='Predicted Low Price')
-plt.axhline(y=predicted_closing_value, color='red', linestyle='--', label='Predicted Closing Price')  # Add predicted closing price line
+plt.axhline(y=predicted_closing_value, color='red', linestyle='--', label='Predicted Closing Price')  price line
 plt.xlabel('Time')
 plt.ylabel('Price')
 plt.legend()

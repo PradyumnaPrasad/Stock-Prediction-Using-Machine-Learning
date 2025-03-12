@@ -13,7 +13,8 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import random
 import os
-from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.callbacks import EarlyStopping, LearningRateScheduler
+from tensorflow.keras.regularizers import l2
 
 
 np.random.seed(42)
@@ -25,7 +26,12 @@ start = datetime.datetime(2010, 1, 1)
 end = datetime.datetime.now()
 user_input = st.text_input('Enter the stock symbol:', 'AAPL')  
 df = yf.download(user_input, start=start, end=end)
+
 df = df.reset_index(drop=False)
+
+
+
+# Check if data is fetched successfully
 
 if df.empty:
     st.error(f"No data found for the symbol: {user_input}. Please check the symbol and try again.")
@@ -91,29 +97,43 @@ class LSTMHyperModel(HyperModel):
     def build(self, hp):
         model = Sequential()
         model.add(LSTM(
-            units=hp.Int('units', min_value=64, max_value=512, step=64),  # Increased range
+            units=hp.Int('units', min_value=64, max_value=256, step=64),  # Reduced max_value
             return_sequences=True,
-            input_shape=(time_step, X_train.shape[2])
+            input_shape=(time_step, X_train.shape[2]),
+            kernel_regularizer=l2(0.01)  # Added L2 regularization
         ))
+
         model.add(Dropout(0.2))  
         model.add(LSTM(
             units=hp.Int('units', min_value=64, max_value=512, step=64),  # Increased range
             return_sequences=True
         ))
         model.add(Dropout(0.2))  
+        model.add(LSTM(units=hp.Int('units', min_value=64, max_value=512, step=64),  # Increased range
+            return_sequences=False))
+
+        model.add(Dropout(0.3))  # Increased dropout rate
         model.add(LSTM(
-            units=hp.Int('units', min_value=64, max_value=512, step=64),  # Increased range
-            return_sequences=False
-        ))
+            units=hp.Int('units', min_value=64, max_value=256, step=64),  # Reduced max_value
+            return_sequences=False,
+            kernel_regularizer=l2(0.01)))  # Added L2 regularization
+        model.add(Dropout(0.3))  # Increased dropout rate
         model.add(Dense(25))
         model.add(Dense(2))
         model.compile(
             optimizer=tf.keras.optimizers.Adam(
-                hp.Choice('learning_rate', values=[1e-2 , 1e-3, 1e-4])
+                hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4])
             ),
             loss='mean_absolute_error'
         )
         return model
+
+# Learning rate scheduler
+def lr_scheduler(epoch, lr):
+    if epoch < 10:
+        return lr
+    else:
+        return lr * tf.math.exp(-0.1)
 
 hypermodel = LSTMHyperModel()
 
@@ -136,9 +156,16 @@ else:
     tuner.search(X_train, y_train, epochs=10, validation_data=(X_test, y_test))
     best_model = tuner.get_best_models(num_models=1)[0]
 
+
     
     early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
     best_model.fit(X_train, y_train, epochs=50, validation_data=(X_test, y_test), callbacks=[early_stopping])  # Increased epochs
+
+    # Fit the best model with early stopping and learning rate scheduler
+    early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)  # Increased patience
+    lr_scheduler_callback = LearningRateScheduler(lr_scheduler)
+    best_model.fit(X_train, y_train, epochs=50, validation_data=(X_test, y_test), callbacks=[early_stopping, lr_scheduler_callback])
+
 
     # Save the trained model
     best_model.save(model_file)
@@ -201,7 +228,7 @@ predicted_closing_value = (adjusted_predicted_prices[0][1] + adjusted_predicted_
 
 # Ensure open value is not lower than predicted low value
 if adjusted_predicted_prices[0][0] < adjusted_predicted_prices[0][2]:
-    adjusted_predicted_prices[0][0] = adjusted_predicted_prices [0][2]
+    adjusted_predicted_prices[0][0] = adjusted_predicted_prices[0][2]
 if adjusted_predicted_prices[0][0] > adjusted_predicted_prices[0][1]:
     adjusted_predicted_prices[0][0] = adjusted_predicted_prices[0][1]
 
@@ -226,7 +253,7 @@ plt.plot(y_test[:, 0], 'g', label='Original High Price')
 plt.plot(y_predicted[:, 0], 'orange', label='Predicted High Price')
 plt.plot(y_test[:, 1], 'purple', label='Original Low Price')
 plt.plot(y_predicted[:, 1], 'pink', label='Predicted Low Price')
-plt.axhline(y=predicted_closing_value, color='red', linestyle='--', label='Predicted Closing Price')  price line
+plt.axhline(y=predicted_closing_value, color='red', linestyle='--', label='Predicted Closing Price')  
 plt.xlabel('Time')
 plt.ylabel('Price')
 plt.legend()

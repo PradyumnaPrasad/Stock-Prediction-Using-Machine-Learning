@@ -17,7 +17,7 @@ from tensorflow.keras.callbacks import EarlyStopping, LearningRateScheduler
 from tensorflow.keras.regularizers import l2
 
 
-np.random.seed(42)
+np.random.seed(42)#To ensure the randomness here , that is to avoid shuffling of dataset everytime I run this code
 random.seed(42)
 tf.random.set_seed(42)
 

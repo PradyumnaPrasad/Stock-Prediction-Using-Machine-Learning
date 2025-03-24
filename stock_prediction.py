@@ -70,12 +70,13 @@ data = df[features].values
 scaler = MinMaxScaler(feature_range=(0, 1))
 scaled_data = scaler.fit_transform(data)
 
-# Create training and testing datasets
+# training and testing
 train_size = int(len(scaled_data) * 0.8)
 train_data = scaled_data[:train_size]
 test_data = scaled_data[train_size - 10:]
 
-# Create datasets for LSTM
+
+#sequence  for lstm and data for ridge regression
 def create_dataset(data, time_step=1):
     X, Y = [], []
     for i in range(len(data) - time_step - 1):
@@ -92,7 +93,7 @@ X_test, y_test = create_dataset(test_data, time_step)
 X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], X_train.shape[2])
 X_test = X_test.reshape(X_test.shape[0], X_test.shape[1], X_test.shape[2])
 
-# Define a HyperModel for KerasTuner
+# HYPERMODEL
 class LSTMHyperModel(HyperModel):
     def build(self, hp):
         model = Sequential()
@@ -226,7 +227,7 @@ adjusted_predicted_prices = np.insert(adjusted_predicted_prices, 0, predicted_op
 # Calculate the predicted closing price as the average of predicted high and low prices
 predicted_closing_value = (adjusted_predicted_prices[0][1] + adjusted_predicted_prices[0][2]) / 2
 
-# Ensure open value is not lower than predicted low value
+
 if adjusted_predicted_prices[0][0] < adjusted_predicted_prices[0][2]:
     adjusted_predicted_prices[0][0] = adjusted_predicted_prices[0][2]
 if adjusted_predicted_prices[0][0] > adjusted_predicted_prices[0][1]:
@@ -268,7 +269,7 @@ predicted_data[1] = adjusted_predicted_prices[0][1]  # Predicted high price
 predicted_data[2] = adjusted_predicted_prices[0][2]  # Predicted low price
 predicted_data[3] = predicted_closing_value  # Predicted closing price
 
-# Concatenate known and predicted data for plotting
+
 plot_data = np.vstack((last_known_data, predicted_data.reshape(1, -1)))
 
 # Plotting the predicted prices for tomorrow

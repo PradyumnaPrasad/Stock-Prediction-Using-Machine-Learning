@@ -4,8 +4,8 @@ import yfinance as yf
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import Ridge
-from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.layers import LSTM, Dense, Dropout
+from keras.models import Sequential, load_model
+from keras.layers import LSTM, Dense, Dropout
 from keras_tuner import HyperModel, RandomSearch
 import streamlit as st
 import datetime
@@ -13,8 +13,13 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import random
 import os
-from tensorflow.keras.callbacks import EarlyStopping, LearningRateScheduler
-from tensorflow.keras.regularizers import l2
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
+from keras.callbacks import EarlyStopping, LearningRateScheduler
+from keras.regularizers import l2
+import time
+from datetime import timedelta
 
 
 np.random.seed(42)#To ensure the randomness here , that is to avoid shuffling of dataset everytime I run this code
@@ -98,32 +103,25 @@ class LSTMHyperModel(HyperModel):
     def build(self, hp):
         model = Sequential()
         model.add(LSTM(
-            units=hp.Int('units', min_value=64, max_value=256, step=64),  # Reduced max_value
+            units=hp.Int('units_1', min_value=64, max_value=128, step=64),
             return_sequences=True,
             input_shape=(time_step, X_train.shape[2]),
-            kernel_regularizer=l2(0.01)  # Added L2 regularization
+            kernel_regularizer=l2(0.01)
         ))
-
-        model.add(Dropout(0.2))  
+        
+        model.add(Dropout(0.2))
         model.add(LSTM(
-            units=hp.Int('units', min_value=64, max_value=512, step=64),  # Increased range
-            return_sequences=True
+            units=hp.Int('units_2', min_value=64, max_value=128, step=64),
+            return_sequences=False
         ))
-        model.add(Dropout(0.2))  
-        model.add(LSTM(units=hp.Int('units', min_value=64, max_value=512, step=64),  # Increased range
-            return_sequences=False))
-
-        model.add(Dropout(0.3))  # Increased dropout rate
-        model.add(LSTM(
-            units=hp.Int('units', min_value=64, max_value=256, step=64),  # Reduced max_value
-            return_sequences=False,
-            kernel_regularizer=l2(0.01)))  # Added L2 regularization
-        model.add(Dropout(0.3))  # Increased dropout rate
-        model.add(Dense(25))
+        
+        model.add(Dropout(0.2))
+        model.add(Dense(hp.Int('dense_units', min_value=16, max_value=32, step=8)))
         model.add(Dense(2))
+        
         model.compile(
-            optimizer=tf.keras.optimizers.Adam(
-                hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4])
+            optimizer=tf.keras.optimizers.legacy.Adam(
+                hp.Choice('learning_rate', values=[1e-2, 1e-3])
             ),
             loss='mean_absolute_error'
         )
@@ -134,7 +132,7 @@ def lr_scheduler(epoch, lr):
     if epoch < 10:
         return lr
     else:
-        return lr * tf.math.exp(-0.1)
+        return lr * 0.9  # Simplified decay for compatibility
 
 hypermodel = LSTMHyperModel()
 
@@ -148,8 +146,8 @@ else:
     tuner = RandomSearch(
         hypermodel,
         objective='val_loss',
-        max_trials=10,
-        executions_per_trial=2,
+        max_trials=5,  # Reduced from 10
+        executions_per_trial=1,  # Reduced from 2
         directory='hyperparameter_tuning',
         project_name='lstm_stock_prediction'
     )

@@ -1,5 +1,5 @@
 
-# 📈 Stock Price Predictor (LSTM + Ridge Regression)
+# Stock Price Predictor (LSTM + Ridge Regression)
 
 This project is a **Streamlit** web application that uses **deep learning (LSTM)** and **machine learning (Ridge Regression)** to predict the next day's stock prices (Open, High, Low, Close) based on historical stock data fetched from Yahoo Finance.
 
@@ -33,45 +33,29 @@ This project is a **Streamlit** web application that uses **deep learning (LSTM)
 
 ## ⚙️ Installation & Setup
 
-1. **Clone the repo:**
+1. **Create and activate a Python 3.11 environment (Windows PowerShell):**
 
    ```bash
-   git clone https://github.com/yourusername/stock-price-predictor.git
-   cd stock-price-predictor
+   py -3.11 -m venv .venv
+   .venv\Scripts\Activate.ps1
    ```
 
-2. **Create a virtual environment (optional but recommended):**
+2. **Install dependencies:**
 
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows use: venv\Scripts\activate
-   ```
-
-3. **Install dependencies:**
-
-   ```bash
+   python -m pip install --upgrade pip
    pip install -r requirements.txt
    ```
 
-   Example `requirements.txt`:
-
-   ```text
-   numpy
-   pandas
-   yfinance
-   scikit-learn
-   keras
-   keras-tuner
-   tensorflow
-   matplotlib
-   streamlit
-   ```
-
-4. **Run the app:**
+3. **Run the actual app file:**
 
    ```bash
-   streamlit run app.py
+   streamlit run stock_prediction.py
    ```
+
+   The app is available at `http://localhost:8501`. It fetches market data from Yahoo Finance, so it needs an internet connection. The included `model.h5` is loaded when present; hyperparameter tuning and training happen only if it is missing.
+
+Python 3.11 and TensorFlow 2.18 are used because the checked-in HDF5 model was saved with Keras 3.7; the original TensorFlow 2.15 pin cannot load it. This is a research/education demo, not investment advice. Forecasts are uncertain and should not guide financial decisions.
 
 ---
 
@@ -101,7 +85,7 @@ After entering a stock ticker like `AAPL`, you’ll see:
 ```
 .
 ├── stock_prediction.py                # Main Streamlit app
-├── model.h5              # Saved best LSTM model (created after training)
+├── model.h5              # Included saved LSTM model
 ├── hyperparameter_tuning/
 │   └── lstm_stock_prediction/  # Keras Tuner files
 ├── requirements.txt

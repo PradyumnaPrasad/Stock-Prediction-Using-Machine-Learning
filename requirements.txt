@@ -2,5 +2,8 @@ numpy
 pandas
 matplotlib
 scikit-learn
-tensorflow==2.15.0 
+tensorflow==2.18.0
 keras-tuner==1.4.6
+yfinance
+streamlit
+plotly

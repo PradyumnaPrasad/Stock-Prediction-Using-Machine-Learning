@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import random
 import os
+from html import escape
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -21,6 +22,57 @@ from keras.regularizers import l2
 import time
 from datetime import timedelta
 
+st.set_page_config(page_title='StockScope | Price Forecasting', page_icon='📈', layout='wide')
+st.markdown('''<style>
+.stApp {background:linear-gradient(135deg,#f0f5ff 0%,#faf7ff 45%,#f0faf8 100%);color:#172b4d;}
+.block-container {max-width:1280px;padding-top:4rem;padding-bottom:3rem;}
+h1,h2,h3 {color:#152b49;letter-spacing:-.025em;}
+h1 {font-size:2.8rem !important;}
+[data-testid="stMetric"] {background:white;border:1px solid #e0e7f1;border-radius:14px;padding:20px 22px;box-shadow:0 3px 12px #17335805;}
+[data-testid="stMetricLabel"] {color:#62738d;}
+[data-testid="stMetricValue"] {font-size:1.85rem;letter-spacing:-.025em;}
+[data-testid="stColumn"]:nth-child(4n+1) [data-testid="stMetric"] {background:#eef2ff;border-top:4px solid #6366f1;}
+[data-testid="stColumn"]:nth-child(4n+2) [data-testid="stMetric"] {background:#e9faf5;border-top:4px solid #0d9488;}
+[data-testid="stColumn"]:nth-child(4n+3) [data-testid="stMetric"] {background:#fff6e7;border-top:4px solid #eaa12c;}
+[data-testid="stColumn"]:nth-child(4n+4) [data-testid="stMetric"] {background:#fff0f5;border-top:4px solid #db5b91;}
+[data-testid="stSidebar"] {background:#fff;border-right:1px solid #e0e7f1;}
+[data-testid="stPlotlyChart"] {background:white;border:1px solid #e0e7f1;border-radius:16px;padding:12px;}
+.eyebrow {display:inline-block;font-size:11px;font-weight:700;letter-spacing:.14em;color:#6350b5;background:#ece7ff;border:1px solid #ddd4ff;border-radius:24px;padding:7px 14px;margin-bottom:10px;}
+.intro {font-size:16px;color:#62738d;margin-bottom:22px;}
+.session-bar {background:linear-gradient(110deg,#e2eaff,#ede6ff,#ddf5ec);border:1px solid #dce5fd;border-radius:12px;padding:16px 20px;color:#36558d;margin:10px 0 26px;}
+.section-label {font-size:11px;letter-spacing:.14em;color:#6350b5;font-weight:700;margin-top:24px;border-left:3px solid #8b5cf6;padding-left:10px;}
+</style>''', unsafe_allow_html=True)
+with st.sidebar:
+    st.markdown('### 📈 StockScope')
+    st.caption('STOCK PRICE FORECASTING')
+    st.divider()
+    with st.form('symbol_selection'):
+        user_input = st.text_input('Stock symbol', 'AAPL', help='Yahoo Finance symbol, e.g. AAPL, MSFT or INFY.NS').strip().upper()
+        st.form_submit_button('Analyze stock', use_container_width=True, type='primary')
+    st.caption('Examples: AAPL · MSFT · GOOGL')
+    st.markdown('**Chart window**')
+    chart_sessions = st.select_slider('Recent history', options=[60, 120, 250], value=120,
+                                      format_func=lambda n: f'{n} sessions')
+    st.caption('Applies to price history, volume and RSI. The model comparison uses its full test segment.')
+    st.divider()
+    st.markdown('**Inside the model**')
+    st.caption('LSTM predicts high and low from a 10-session window. Ridge regression estimates open. Close is derived from the predicted range.')
+    st.markdown('**Data source**')
+    st.caption('Yahoo Finance · Daily observations since 2010. Prices follow the data provider’s quote currency.')
+    st.divider()
+    st.caption('Academic project demonstration')
+
+st.markdown('<div class="eyebrow">MACHINE LEARNING / MARKET ANALYSIS</div>', unsafe_allow_html=True)
+st.title('Stock price forecasting')
+st.markdown('<div class="intro">Explore historical patterns. Compare model predictions. Preview the next session.</div>', unsafe_allow_html=True)
+
+@st.cache_data(ttl=3600, show_spinner='Fetching stock history...')
+def fetch_history(symbol):
+    return yf.download(symbol, start=datetime.datetime(2010, 1, 1), end=datetime.datetime.now(), progress=False)
+
+@st.cache_resource(show_spinner='Loading the saved LSTM model...')
+def saved_model(path):
+    return load_model(path)
 
 np.random.seed(42)#To ensure the randomness here , that is to avoid shuffling of dataset everytime I run this code
 random.seed(42)
@@ -29,8 +81,19 @@ tf.random.set_seed(42)
 # Fetch stock data
 start = datetime.datetime(2010, 1, 1)
 end = datetime.datetime.now()
-user_input = st.text_input('Enter the stock symbol:', 'AAPL')  
-df = yf.download(user_input, start=start, end=end)
+if not user_input or any(c.isspace() for c in user_input) or ',' in user_input:
+    st.info('Enter one stock symbol in the sidebar to begin.')
+    st.stop()
+try:
+    df = fetch_history(user_input)
+except Exception as exc:
+    st.error(f'Could not fetch stock history. Please try again. ({type(exc).__name__})')
+    st.stop()
+
+# Recent yfinance versions return a (Price, Ticker) MultiIndex even for one ticker.
+# Flatten it so Open/High/Low/Close are numeric Series as this script expects.
+if isinstance(df.columns, pd.MultiIndex):
+    df.columns = df.columns.get_level_values(0)
 
 df = df.reset_index(drop=False)
 
@@ -43,7 +106,6 @@ if df.empty:
     st.stop()  
 
 # Prepare the data
-df['Date'] = df.index
 df['Date'] = pd.to_datetime(df['Date'])
 df['Day'] = df['Date'].dt.day
 df['Month'] = df['Date'].dt.month
@@ -68,6 +130,10 @@ df['RSI'] = 100 - (100 / (1 + rs))
 
 # Drop rows with NaN values
 df.dropna(inplace=True)
+if len(df) < 80:
+    st.warning('This symbol does not have enough usable history for a 10-session model window. Try AAPL or MSFT.')
+    st.stop()
+history_dates = df['Date'].copy()
 
 # Select features
 features = ['Open', 'High', 'Low', 'Close', 'Volume', 'Day', 'Month', 'Year', 'SMA_20', 'SMA_50', 'EMA_20', 'EMA_50', 'RSI']
@@ -140,7 +206,7 @@ hypermodel = LSTMHyperModel()
 model_file = 'model.h5'
 if os.path.exists(model_file):
     # Load the existing model
-    best_model = load_model(model_file)
+    best_model = saved_model(model_file)
 else:
     # hyperparameter tuning
     tuner = RandomSearch(
@@ -231,53 +297,109 @@ if adjusted_predicted_prices[0][0] < adjusted_predicted_prices[0][2]:
 if adjusted_predicted_prices[0][0] > adjusted_predicted_prices[0][1]:
     adjusted_predicted_prices[0][0] = adjusted_predicted_prices[0][1]
 
-# Display today's high and low
-todays_high = df['High'].iloc[-1]
-todays_low = df['Low'].iloc[-1]
-st.subheader('Today\'s Prices')
-st.write(f"High: {todays_high}")
-st.write(f"Low: {todays_low}")
+# Dashboard output: show the source session and keep forecasts visibly distinct.
+latest_date = df['Date'].iloc[-1].strftime('%d %b %Y')
+st.markdown(f'<div class="session-bar"><b>{escape(user_input)}</b> &nbsp; / &nbsp; Latest available session: {latest_date} &nbsp; / &nbsp; Daily data</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-label">01 / OBSERVED MARKET DATA</div>', unsafe_allow_html=True)
+st.subheader("Today's Prices")
+st.caption(f'Latest available trading session: {latest_date}. Weekends and holidays may have no new observations.')
+for col, label in zip(st.columns(4), ('Open', 'High', 'Low', 'Close')):
+    col.metric(label, f"{float(df[label].iloc[-1]):,.2f}")
 
-# Display the predicted prices
-st.subheader('Tomorrow\'s Predicted Prices')
-st.write(f"Open: {adjusted_predicted_prices[0][0]}")
-st.write(f"High: {adjusted_predicted_prices[0][1]}")
-st.write(f"Low: {adjusted_predicted_prices[0][2]}")
-st.write(f"Close: {predicted_closing_value}")  
+st.markdown('<div class="section-label">02 / MODEL OUTLOOK</div>', unsafe_allow_html=True)
+st.subheader("Tomorrow's Predicted Prices")
+st.caption('Forecast for the next trading session after the latest observation. Close is the midpoint of predicted high and low.')
+for col, label, value in zip(st.columns(4), ('Open', 'High', 'Low', 'Close'), (*adjusted_predicted_prices[0], predicted_closing_value)):
+    col.metric(f'Predicted {label}', f"{float(value):,.2f}")
 
-# Plotting the prediction vs original for 'High', 'Low', and 'Close' prices
+def style_chart(fig, xlabel):
+    fig.update_layout(template='plotly_white', height=410, paper_bgcolor='#ffffff', plot_bgcolor='#ffffff',
+                      margin=dict(t=30, b=40, l=20, r=20), font=dict(family='Arial', color='#526681', size=12),
+                      legend=dict(orientation='h', y=1.13, x=0), hovermode='x unified',
+                      xaxis_title=xlabel, yaxis_title='Price (quote currency)')
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(gridcolor='#edf1f7', zeroline=False)
+    return fig
+
+st.markdown('<div class="section-label">03 / HISTORICAL COMPARISON</div>', unsafe_allow_html=True)
 st.subheader('Prediction vs Original')
-fig2 = plt.figure(figsize=(12, 6))
-plt.plot(y_test[:, 0], 'g', label='Original High Price')
-plt.plot(y_predicted[:, 0], 'orange', label='Predicted High Price')
-plt.plot(y_test[:, 1], 'purple', label='Original Low Price')
-plt.plot(y_predicted[:, 1], 'pink', label='Predicted Low Price')
-plt.axhline(y=predicted_closing_value, color='red', linestyle='--', label='Predicted Closing Price')  
-plt.xlabel('Time')
-plt.ylabel('Price')
-plt.legend()
-st.pyplot(fig2)
+st.caption('Actual high and low against LSTM outputs on the final chronological segment. This chart alone does not establish forecast accuracy.')
+comparison = go.Figure()
+test_dates = history_dates.iloc[train_size:train_size + len(y_test)]
+for values, name, color, dash in (
+    (y_test[:, 0], 'Actual High', '#087f8c', 'solid'),
+    (y_predicted[:, 0], 'Predicted High', '#6366f1', 'dash'),
+    (y_test[:, 1], 'Actual Low', '#d4902a', 'solid'),
+    (y_predicted[:, 1], 'Predicted Low', '#dc647d', 'dash'),
+):
+    comparison.add_scatter(x=test_dates, y=values, mode='lines', name=name, line=dict(color=color, dash=dash, width=2))
+st.plotly_chart(style_chart(comparison, 'Trading session'), use_container_width=True)
 
-# Prepare data for plotting tomorrow's prices
-last_known_data = np.array(data[-10:])
-# Ensure predicted_data has the same number of columns as last_known_data
-predicted_data = np.zeros_like(last_known_data[0])
-predicted_data[0] = adjusted_predicted_prices[0][0]  # Predicted open price
-predicted_data[1] = adjusted_predicted_prices[0][1]  # Predicted high price
-predicted_data[2] = adjusted_predicted_prices[0][2]  # Predicted low price
-predicted_data[3] = predicted_closing_value  # Predicted closing price
-
-
-plot_data = np.vstack((last_known_data, predicted_data.reshape(1, -1)))
-
-# Plotting the predicted prices for tomorrow
+st.markdown('<div class="section-label">04 / NEXT SESSION PREVIEW</div>', unsafe_allow_html=True)
 st.subheader('Graph of Predicted Prices for Tomorrow')
-fig3 = plt.figure(figsize=(12, 6))
-plt.plot(plot_data[:, 0], 'b', label='Predicted Open Price for Tomorrow')
-plt.plot(plot_data[:, 1], 'g', label='Predicted High Price for Tomorrow')
-plt.plot(plot_data[:, 2], 'purple', label='Predicted Low Price for Tomorrow')
-plt.axhline(y=predicted_closing_value, color='red', linestyle='--', label='Predicted Closing Price for Tomorrow')  # Add predicted closing price line
-plt.xlabel('Time')
-plt.ylabel('Price')
-plt.legend()
-st.pyplot(fig3)
+st.caption('Ten observed sessions followed by one forecast. The shaded area and dashed lines identify the forecast.')
+forecast_fig = go.Figure()
+labels = list(history_dates.iloc[-10:].dt.strftime('%d %b %Y')) + ['Next session']
+next_values = (*adjusted_predicted_prices[0], predicted_closing_value)
+for i, (name, color) in enumerate(zip(('Open', 'High', 'Low', 'Close'), ('#6366f1', '#087f8c', '#d4902a', '#dc647d'))):
+    values = data[-10:, i]
+    forecast_fig.add_scatter(x=labels[:10], y=values, mode='lines+markers', name=name,
+                             line=dict(color=color, width=2), marker=dict(size=5), legendgroup=name)
+    forecast_fig.add_scatter(x=labels[-2:], y=[values[-1], next_values[i]], mode='lines+markers',
+                             line=dict(color=color, width=2, dash='dash'), marker=dict(size=8, symbol='diamond'),
+                             name=f'{name} forecast', legendgroup=name, showlegend=False)
+forecast_fig.add_vrect(x0=9.5, x1=10.5, fillcolor='#eef2ff', opacity=.6, line_width=0, layer='below')
+forecast_fig.update_xaxes(type='category', categoryorder='array', categoryarray=labels)
+st.plotly_chart(style_chart(forecast_fig, 'Observed sessions / next-session forecast'), use_container_width=True)
+
+st.markdown('<div class="section-label">05 / MARKET EXPLORER</div>', unsafe_allow_html=True)
+st.subheader('Price history & moving averages')
+st.caption('Each candle shows a session’s open, high, low and close. Moving averages smooth the observed closing prices; they are not forecasts.')
+recent = df.tail(chart_sessions)
+price_fig = go.Figure(go.Candlestick(
+    x=recent['Date'], open=recent['Open'], high=recent['High'], low=recent['Low'], close=recent['Close'],
+    name='Observed OHLC', increasing_line_color='#0d9488', decreasing_line_color='#e45c83',
+))
+for field, name, color in [('SMA_20', '20-session SMA', '#6366f1'), ('SMA_50', '50-session SMA', '#eaa12c')]:
+    price_fig.add_scatter(x=recent['Date'], y=recent[field], name=name, mode='lines', line=dict(color=color, width=2))
+style_chart(price_fig, 'Trading session')
+price_fig.update_layout(xaxis_rangeslider_visible=False, height=440)
+st.plotly_chart(price_fig, use_container_width=True)
+
+volume_col, rsi_col = st.columns(2)
+with volume_col:
+    st.subheader('Trading volume')
+    st.caption('Shares traded per session. Colors indicate close versus open.')
+    volume_fig = go.Figure(go.Bar(x=recent['Date'], y=recent['Volume'], name='Volume',
+        marker_color=np.where(recent['Close'] >= recent['Open'], '#23b5a0', '#ec86aa')))
+    style_chart(volume_fig, 'Trading session')
+    volume_fig.update_layout(yaxis_title='Shares traded', height=340, showlegend=False)
+    st.plotly_chart(volume_fig, use_container_width=True)
+with rsi_col:
+    st.subheader('RSI · 14 sessions')
+    st.caption('Momentum indicator on a 0–100 scale; 30 and 70 are reference levels.')
+    rsi_fig = go.Figure(go.Scatter(x=recent['Date'], y=recent['RSI'], name='RSI',
+        mode='lines', line=dict(color='#8b5cf6', width=2.5)))
+    rsi_fig.add_hrect(y0=30, y1=70, fillcolor='#ede9fe', opacity=.5, line_width=0)
+    for level, color in [(30, '#0d9488'), (70, '#db5b91')]:
+        rsi_fig.add_hline(y=level, line_dash='dot', line_color=color)
+    style_chart(rsi_fig, 'Trading session')
+    rsi_fig.update_layout(yaxis_title='RSI', yaxis_range=[0, 100], height=340, showlegend=False)
+    st.plotly_chart(rsi_fig, use_container_width=True)
+
+st.markdown('<div class="section-label">06 / MODEL DIAGNOSTICS</div>', unsafe_allow_html=True)
+st.subheader('Where predictions differ from observations')
+st.caption('Prediction minus actual price on the displayed test segment. Above zero means an overestimate; below zero means an underestimate.')
+residuals = y_predicted - y_test
+error_fig = go.Figure()
+for i, name, color in [(0, 'High error', '#6366f1'), (1, 'Low error', '#db5b91')]:
+    error_fig.add_scatter(x=test_dates, y=residuals[:, i], name=name, mode='lines', line=dict(color=color, width=1.5))
+error_fig.add_hline(y=0, line_color='#64748b', line_dash='dash')
+style_chart(error_fig, 'Trading session')
+error_fig.update_layout(yaxis_title='Predicted minus actual (quote currency)', height=340)
+st.plotly_chart(error_fig, use_container_width=True)
+st.caption('These errors describe the existing model and preprocessing on this dataset. They are not an independent benchmark: the scaler uses the full downloaded history and the saved model’s training split is not documented.')
+with st.expander('How to read this dashboard'):
+    st.write('Solid lines show observed prices. Dashed lines show model outputs. The saved LSTM is reused; the displayed outlook also includes the original project’s offset and opening-price constraints. These outputs are a classroom demonstration, not independently validated forecasts.')
+st.divider()
+st.caption('StockScope · LSTM + Ridge Regression · Academic demonstration')
